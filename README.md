@@ -35,8 +35,8 @@ pip3 install --user pymongo
  7. From the terminal, change directory to the root folder of this **mongo-parallel-agg** project and execute the following to connect to the Atlas cluster and execute a simple aggregation pipeline, split into 16 sub-pipelines run in parallel, which calculates and then prints out the average "metacritic" score across all movies in the collection of 100 million records, including printing out the total execution time at the end of the run:
 
 ```console
-./mongo-parallel-agg.py -m "mongodb+srv://myusr:mypwd@mycluster.abc1.mongodb.net/" -d "sample_mflix" -c "movies_big" -s 15 -p "title" -a "metacritic"
+./mongo-parallel-agg.py -m "mongodb+srv://myusr:mypwd@mycluster.abc1.mongodb.net/" -d "sample_mflix" -c "movies_big" -s 16 -p "title" -a "metacritic"
 ```
 
-&nbsp;&nbsp;&nbsp;&nbsp;_NOTE_: Before executing the above command, first change the URL's _username_, _password_, and _hostname_ to match the URL of your running Atlas cluster. Also, optionally change the _-s_ parameter to a different value to run a different number of sub-processes. You can set this value to _0_ to instruct the tool to not split up the aggregation pipeline and instead run the full aggregation in one go from the main process.
+&nbsp;&nbsp;&nbsp;&nbsp;_NOTE_: Before executing the above command, first change the URL's _username_, _password_, and _hostname_ to match the URL of your running Atlas cluster. Also, optionally change the _-s_ parameter to a different value to run a different number of sub-processes. You can set this value to _1_ to instruct the tool to not split up the aggregation pipeline and instead run the full aggregation in one go from the main single process.
 

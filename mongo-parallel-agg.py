@@ -52,30 +52,31 @@ def main():
                            help=f"Database name (default: {DEFAULT_DBNAME})")
     argparser.add_argument("-c", "--coll", default=DEFAULT_COLLNAME,
                            help=f"Collection name (default: {DEFAULT_COLLNAME})")
-    argparser.add_argument("-s", "--splitsAmount", default=DEFAULT_SPLITS_AMOUNT, type=int,
-                           help=f"The number of division points the data-set should be split up by "
-                                f"for parallel processing - the actual number of spawned "
-                                f"sub-processing jobs will be one greater than this value - specify"
-                                f" zero for no dividing of the data and no parallel processing "
-                                f"(default: {DEFAULT_SPLITS_AMOUNT})")
+    argparser.add_argument("-s", "--subProcsAmount", default=DEFAULT_SUBPROCS_AMOUNT, type=int,
+                           help=f"The number of subsections to divide the data-set into for this "
+                                f"number of sub-processes to then run the aggrgeation against one "
+                                f"subsection of data each, in parallel - set the value to 1 to not "
+                                f"divide the data-set up and instead run a single aggregation "
+                                f"pipeline against the entire data-set "
+                                f"(default: {DEFAULT_SUBPROCS_AMOUNT})")
     argparser.add_argument("-p", "--partitionField", default=DEFAULT_PARTITION_FIELD,
                            help=f"Name of the field in each document to partition (split) the "
                                 f"aggregation workload on - ensure this will as much or more "
-                                f"granularity as the '--splitsAmount' argument you have provided "
+                                f"granularity as the '--subProcsAmount' argument you have provided "
                                 f"(default: {DEFAULT_PARTITION_FIELD})")
     argparser.add_argument("-a", "--fieldToAverage", default=DEFAULT_FIELD_TO_AVERAGE,
                            help=f"Name of the number field to calculate an average for "
                                 f"(default: {DEFAULT_FIELD_TO_AVERAGE})")
     args = argparser.parse_args()
     print()
-    run(args.url, args.db, args.coll, args.splitsAmount, args.partitionField, args.fieldToAverage)
+    run(args.url, args.db, args.coll, args.subProcsAmount, args.partitionField, args.fieldToAverage)
 
 
 ##
 # The main function for performing the average aggregation pipeline against a data set (either as
 # one single aggregation job or a set of split aggregation jobs in parallel)
 ##
-def run(url, dbname, collName, splitsAmount, partitionField, avgField):
+def run(url, dbname, collName, subProcsAmount, partitionField, avgField):
     print(f"\nConnecting to MongoDB using URL '{url}' "
           f"({datetime.now().strftime(DATE_TIME_FORMAT)})\n")
     connection = MongoClient(url)
@@ -95,15 +96,15 @@ def run(url, dbname, collName, splitsAmount, partitionField, avgField):
                  f"performing parallel processing on (type is: '{type}'")
 
     # Run just a single aggregation pipeline against the whole data-set
-    if splitsAmount <= 0:
+    if subProcsAmount <= 1:
         print(f" Processing one full aggregation serially")
         start = datetime.now()
-        average = executeFullAggPipeline(db, collName, avgField)
+        average = executeFullAggPipeline(db, collName, partitionField, avgField)
     # Run multiple split aggregation pipelines in parallel
     else:
         # Analyse the data set to work out an even spread of split points on the field to partition
         print(f" Determining split points for partition field '{partitionField}'")
-        splitPoints = getFieldSplitPoints(db, collName, partitionField, splitsAmount)
+        splitPoints = getFieldSplitPoints(db, collName, partitionField, subProcsAmount)
         aggAvgBatchJobs = assembleBatchJobSpecs(splitPoints, partitionField, avgField)
         print(f" Processing split aggregations in parallel ({len(aggAvgBatchJobs)} processes)")
         print(" |-> ", end="", flush=True)
@@ -125,10 +126,16 @@ def run(url, dbname, collName, splitsAmount, partitionField, avgField):
 
 
 ###
-# Execute a single aggregation against the whole data-set (don't split into multiple jobs).
+# Execute a single aggregation against the whole data-set (don't split into multiple jobs). Uses
+# the hack of adding a match filter on all documents to force the compound index to be used and
+# the aggregation into a covered query aggregation.
 ##
-def executeFullAggPipeline(db, collName, avgField):
+def executeFullAggPipeline(db, collName, partitionField, avgField):
     pipeline = [
+        {"$match": {
+            partitionField: {"$gte": MinKey}
+        }},
+
         {"$group": {
             "_id": "",
             "average": {"$avg": f"${avgField}"},
@@ -221,7 +228,7 @@ def getFieldType(db, collName, fieldName):
 ##
 # Analyse the data set to work out an even spread of split points on the field to partition.
 ##
-def getFieldSplitPoints(db, collName, fieldName, splitsAmount):
+def getFieldSplitPoints(db, collName, fieldName, subProcsAmount):
     pipeline = [
         {"$sample": {
             "size": 50000
@@ -229,7 +236,7 @@ def getFieldSplitPoints(db, collName, fieldName, splitsAmount):
 
         {"$bucketAuto": {
             "groupBy": f"${fieldName}",
-            "buckets": splitsAmount
+            "buckets": subProcsAmount
         }},
 
         {"$group": {
@@ -249,10 +256,20 @@ def getFieldSplitPoints(db, collName, fieldName, splitsAmount):
 
 
 ##
-# Assembles the list of batch jobs that will need to be run.
+# Assembles the list of batch jobs that will need to be run. Ensures MinKey and MaxKey boundaries
+# are included at either end of the set of ranges to avoid missing any data (more very early or very
+# late records could have been added since last running $bucketAuto and also the use of $bucketAuto
+# in this app uses sampling first.
 ##
 def assembleBatchJobSpecs(splitPoints, partitionField, avgField):
     splitPoints = splitPoints.copy()
+
+    # First split point generated from $bucketAuto earlier should be first sorted docuemnt in the
+    # collection, however removing it here cos going to add MinKey to start of list further down
+    # to be sure
+    if len(splitPoints) > 1:
+        del splitPoints[0]
+
     currItem = MinKey
     splitPoints.append(MaxKey)
     aggAvgBatchJobs = []
@@ -336,7 +353,7 @@ def shutdown():
 DEFAULT_MONGODB_URL = "mongodb://localhost:27017"
 DEFAULT_DBNAME = "sample_mflix"
 DEFAULT_COLLNAME = "movies"
-DEFAULT_SPLITS_AMOUNT = 32
+DEFAULT_SUBPROCS_AMOUNT = 32
 DEFAULT_PARTITION_FIELD = "title"
 DEFAULT_FIELD_TO_AVERAGE = "metacritic"
 BSON_TYPE_FIELD = "type"

@@ -6,7 +6,7 @@ The _mongo-parallel-agg_ tool relies on analysing an inflated version of the [At
 
 The _mongo-parallel-agg_ tool also leverages the [mongo-mangler](https://github.com/pkdone/mongo-mangler) utility to expand the sample _movies_ data-set to a collection of 100 million records, using duplication.
 
-For more information on using this tool to demonstrate decreasing the see execution time of an aggregation pipeline, see the blog post [TODO](TODO).
+For more information on using this tool to demonstrate decreasing the see execution time of an aggregation pipeline, see the blog post [Achieving At Least An Order Of Magnitude Aggregation Performance Improvement By Scaling & Parallelism](https://pauldone.blogspot.com/2021/12/agg-multiple-processes.html).
 
 
 ## Steps To Run

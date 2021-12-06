@@ -264,9 +264,9 @@ def getFieldSplitPoints(db, collName, fieldName, subProcsAmount):
 def assembleBatchJobSpecs(splitPoints, partitionField, avgField):
     splitPoints = splitPoints.copy()
 
-    # First split point generated from $bucketAuto earlier should be first sorted docuemnt in the
-    # collection, however removing it here cos going to add MinKey to start of list further down
-    # to be sure
+    # First split point generated from running $bucketAuto earlier should be first sorted document
+    # in the collection, however removing it here because we will be going to add MinKey to the
+    # start of list further down in this function, to be sure we catch all low range docs
     if len(splitPoints) > 1:
         del splitPoints[0]
 
@@ -274,6 +274,7 @@ def assembleBatchJobSpecs(splitPoints, partitionField, avgField):
     splitPoints.append(MaxKey)
     aggAvgBatchJobs = []
 
+    # Capture start and end point for each split subsection
     for nextItem in splitPoints:
         aggAvgBatchJobs.append(AggAvgBatchJob(partitionField, currItem, nextItem, avgField))
         currItem = nextItem
